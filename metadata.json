@@ -1,0 +1,7 @@
+{
+  "name": "Phonic Pals - Adventure in Pronunciation",
+  "description": "A high-energy, colorful English pronunciation app for kids featuring game-like navigation, age-appropriate levels, and fun topics.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
