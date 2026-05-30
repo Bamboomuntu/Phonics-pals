@@ -5,6 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Phonic Pals - Pronunciation Adventure</title>
+    <meta name="description" content="Master English pronunciation and help preserve Ugandan languages — one game at a time" />
     <link rel="manifest" href="/manifest.webmanifest">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -42,6 +43,15 @@
         scrollbar-width: none;
       }
     </style>
+    <!-- PWA registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
+    <link rel="stylesheet" href="/index.css">
   <script type="importmap">
 {
   "imports": {
@@ -57,6 +67,7 @@
 </head>
   <body>
     <div id="root"></div>
+    <div id="umpire-root" style="display:none;"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
