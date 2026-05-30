@@ -62,6 +62,7 @@ export const RapidFire: React.FC<RapidFireProps> = ({ teams: initialTeams, deck,
   const [micError, setMicError] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const currentBlobUrlRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownBarRef = useRef<HTMLDivElement>(null);
 
@@ -184,6 +185,11 @@ export const RapidFire: React.FC<RapidFireProps> = ({ teams: initialTeams, deck,
     } else {
       // Lusoga — teacher judges
       setIsAnalyzing(false);
+      // Create blob URL for teacher playback
+      if (audioChunksRef.current.length > 0) {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        currentBlobUrlRef.current = URL.createObjectURL(blob);
+      }
       // Teacher umpire UI shows
     }
   };
@@ -326,7 +332,12 @@ export const RapidFire: React.FC<RapidFireProps> = ({ teams: initialTeams, deck,
     }, 500);
   };
 
-  // ─── Keyboard Nav ────────────────────────────────────
+  // ─── Derived flags ──────────────────────────────────
+
+  const isEnglishTurn = direction === 'LUSOGA_TO_ENGLISH';
+  const isLusogaTurn = direction === 'ENGLISH_TO_LUSOGA';
+
+  // ─── Keyboard Shortcuts ──────────────────────────────
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -339,10 +350,21 @@ export const RapidFire: React.FC<RapidFireProps> = ({ teams: initialTeams, deck,
       if (e.key === 'Enter') {
         if (phase === 'TURN_COMPLETE') advanceTurn();
       }
+      // Teacher umpire shortcuts
+      if (phase === 'JUDGING' && isLusogaTurn && !isAnalyzing) {
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          handleTeacherCorrect();
+        }
+        if (e.key === 'n' || e.key === 'N') {
+          e.preventDefault();
+          if (!showCorrection) handleTeacherIncorrect();
+        }
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [phase, isRecording, isAnalyzing]);
+  }, [phase, isRecording, isAnalyzing, showCorrection, direction]);
 
   // ─── Init ────────────────────────────────────────────
 
@@ -358,14 +380,13 @@ export const RapidFire: React.FC<RapidFireProps> = ({ teams: initialTeams, deck,
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
+      if (currentBlobUrlRef.current) URL.revokeObjectURL(currentBlobUrlRef.current);
     };
   }, []);
 
   // ─── Phase Rendering ─────────────────────────────────
 
   const countdownPercent = (countdown / 5) * 100;
-  const isEnglishTurn = direction === 'LUSOGA_TO_ENGLISH';
-  const isLusogaTurn = direction === 'ENGLISH_TO_LUSOGA';
   const timerColor = countdown <= 2 ? 'bg-red-500' : countdown <= 3 ? 'bg-yellow-500' : 'bg-green-500';
 
   // ─── GAME OVER ───────────────────────────────────────
@@ -427,18 +448,33 @@ export const RapidFire: React.FC<RapidFireProps> = ({ teams: initialTeams, deck,
             </div>
           </div>
 
+          {/* Playback button */}
+          {currentBlobUrlRef.current && (
+            <button
+              onClick={() => {
+                const audio = new Audio(currentBlobUrlRef.current!);
+                audio.play();
+              }}
+              className="mb-6 bg-blue-100 hover:bg-blue-200 text-blue-700 px-8 py-4 rounded-[2rem] font-black text-lg border-b-4 border-blue-300 active:translate-y-1 transition-all shadow-md"
+            >
+              🔉 PLAY RECORDING
+            </button>
+          )}
+
           <div className="flex gap-4 justify-center">
             <button onClick={handleTeacherCorrect}
               className="bg-green-500 text-white px-10 py-6 rounded-[2rem] border-b-8 border-green-700 active:translate-y-2 active:border-b-0 transition-all shadow-xl"
             >
               <div className="text-4xl mb-1">✅</div>
               <div className="font-black text-lg">CORRECT</div>
+              <div className="text-xs opacity-70 mt-1">Press Y</div>
             </button>
             <button onClick={handleTeacherIncorrect}
               className="bg-red-500 text-white px-10 py-6 rounded-[2rem] border-b-8 border-red-700 active:translate-y-2 active:border-b-0 transition-all shadow-xl"
             >
               <div className="text-4xl mb-1">❌</div>
               <div className="font-black text-lg">INCORRECT</div>
+              <div className="text-xs opacity-70 mt-1">Press N</div>
             </button>
           </div>
 

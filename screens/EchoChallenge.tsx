@@ -298,10 +298,21 @@ export const EchoChallenge: React.FC<EchoChallengeProps> = ({ teams: initialTeam
         if (phase === 'RECORD' && !isRecording) startRecording();
         else if (phase === 'RECORD' && isRecording) stopRecording();
       }
+      // Teacher umpire shortcuts
+      if (phase === 'RECORD_TEACHER') {
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          handleTeacherCorrect();
+        }
+        if (e.key === 'n' || e.key === 'N') {
+          e.preventDefault();
+          if (!showCorrection) handleTeacherIncorrect();
+        }
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [phase, isRecording]);
+  }, [phase, isRecording, showCorrection]);
 
   // ─── Cleanup blob URLs ───────────────────────────────
 
@@ -403,11 +414,13 @@ export const EchoChallenge: React.FC<EchoChallengeProps> = ({ teams: initialTeam
               className="bg-green-500 text-white px-10 py-6 rounded-[2rem] border-b-8 border-green-700 active:translate-y-2 shadow-xl">
               <div className="text-4xl mb-1">✅</div>
               <div className="font-black text-lg">CORRECT</div>
+              <div className="text-xs opacity-70 mt-1">Press Y</div>
             </button>
             <button onClick={handleTeacherIncorrect}
               className="bg-red-500 text-white px-10 py-6 rounded-[2rem] border-b-8 border-red-700 active:translate-y-2 shadow-xl">
               <div className="text-4xl mb-1">❌</div>
               <div className="font-black text-lg">INCORRECT</div>
+              <div className="text-xs opacity-70 mt-1">Press N</div>
             </button>
           </div>
 

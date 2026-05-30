@@ -62,6 +62,7 @@ export const ArenaBattle: React.FC<ArenaBattleProps> = ({ teams: initialTeams, d
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const currentBlobUrlRef = useRef<string | null>(null);
   const listenerRef = useRef<((e: Event) => void) | null>(null);
 
   const currentWord = deck[currentWordIndex];
@@ -238,6 +239,12 @@ export const ArenaBattle: React.FC<ArenaBattleProps> = ({ teams: initialTeams, d
     }
     setIsRecording(false);
 
+    // Create blob URL for umpire playback
+    if (audioChunksRef.current.length > 0) {
+      const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      currentBlobUrlRef.current = URL.createObjectURL(blob);
+    }
+
     // Mark Lusoga as recorded
     const existing = [...rounds];
     if (!existing[currentWordIndex]) {
@@ -289,10 +296,21 @@ export const ArenaBattle: React.FC<ArenaBattleProps> = ({ teams: initialTeams, d
       if (e.key === 'Enter' && !isRecording && englishScore !== null) {
         advancePhase();
       }
+      // Teacher umpire shortcuts
+      if (phase === 'UMPIRE') {
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          handleUmpireCorrect();
+        }
+        if (e.key === 'n' || e.key === 'N') {
+          e.preventDefault();
+          if (!showCorrectionInput) handleUmpireIncorrect();
+        }
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [isRecording, isAnalyzing, isLusogaPhase, englishScore, advancePhase]);
+  }, [isRecording, isAnalyzing, isLusogaPhase, englishScore, advancePhase, phase, showCorrectionInput]);
 
   // ─── Cleanup ──────────────────────────────────────────
 
@@ -302,6 +320,7 @@ export const ArenaBattle: React.FC<ArenaBattleProps> = ({ teams: initialTeams, d
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
+      if (currentBlobUrlRef.current) URL.revokeObjectURL(currentBlobUrlRef.current);
     };
   }, []);
 
@@ -377,6 +396,19 @@ export const ArenaBattle: React.FC<ArenaBattleProps> = ({ teams: initialTeams, d
             </div>
           </div>
 
+          {/* Playback button */}
+          {currentBlobUrlRef.current && (
+            <button
+              onClick={() => {
+                const audio = new Audio(currentBlobUrlRef.current!);
+                audio.play();
+              }}
+              className="mb-6 bg-blue-100 hover:bg-blue-200 text-blue-700 px-8 py-4 rounded-[2rem] font-black text-lg border-b-4 border-blue-300 active:translate-y-1 transition-all shadow-md"
+            >
+              🔉 PLAY RECORDING
+            </button>
+          )}
+
           {/* Verdict Buttons */}
           {!showCorrectionInput ? (
             <div className="flex gap-6 justify-center">
@@ -386,7 +418,7 @@ export const ArenaBattle: React.FC<ArenaBattleProps> = ({ teams: initialTeams, d
               >
                 <div className="text-5xl mb-2">✅</div>
                 <div className="font-black text-xl">CORRECT</div>
-                <div className="text-sm opacity-70">Press C</div>
+                <div className="text-sm opacity-70">Press Y</div>
               </button>
               <button
                 onClick={handleUmpireIncorrect}
@@ -394,7 +426,7 @@ export const ArenaBattle: React.FC<ArenaBattleProps> = ({ teams: initialTeams, d
               >
                 <div className="text-5xl mb-2">❌</div>
                 <div className="font-black text-xl">INCORRECT</div>
-                <div className="text-sm opacity-70">Press X</div>
+                <div className="text-sm opacity-70">Press N</div>
               </button>
             </div>
           ) : (
