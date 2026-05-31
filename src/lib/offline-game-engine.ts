@@ -12,6 +12,7 @@
 import { GoogleGenAI, Type, Modality } from '@google/genai';
 import { getCachedAudioUrl, isOnline } from './cache-manager';
 import { assessPronunciation as offlineAssess, isSpeechRecognitionAvailable } from './offline-scoring';
+import { getCachedImage, cacheImage } from './image-cache';
 
 // ─── Online/Offline Detection ──────────────────────────
 
@@ -203,17 +204,25 @@ export { speakWithBrowser };
 
 // ─── Image Generation ──────────────────────────────────
 
+/**
+ * Generate or retrieve a cached image for a word.
+ *
+ *  Online  → Gemini generates, then caches to localStorage + Cache API
+ *  Offline → Serves from Cache API or localStorage
+ *  Uncached → Returns null (shows placeholder)
+ */
 export async function generateWordImage(
   word: string,
   definition: string
 ): Promise<string | null> {
-  if (!getEffectiveOnline()) {
-    return null; // offline — no image
-  }
-
-  const cacheKey = `phonic_pal_img_${word.toLowerCase().replace(/\s/g, '_')}`;
-  const cached = localStorage.getItem(cacheKey);
+  // Check cache first (works both online and offline)
+  const cached = await getCachedImage(word);
   if (cached) return cached;
+
+  // Not cached — only generate if online
+  if (!getEffectiveOnline()) {
+    return null;
+  }
 
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -270,17 +279,8 @@ export async function generateWordImage(
     }
 
     if (foundImage) {
-      try {
-        localStorage.setItem(cacheKey, foundImage);
-      } catch {
-        // Clear old cache if quota exceeded
-        Object.keys(localStorage)
-          .filter((k) => k.startsWith('phonic_pal_img_'))
-          .forEach((k) => localStorage.removeItem(k));
-        try {
-          localStorage.setItem(cacheKey, foundImage);
-        } catch {}
-      }
+      // Persist to both localStorage and Cache API
+      await cacheImage(word, foundImage);
     }
 
     return foundImage;
@@ -288,6 +288,46 @@ export async function generateWordImage(
     console.error('Image Gen Error:', error);
     return null;
   }
+}
+
+/**
+ * Pre-download and cache images for a list of words.
+ * Used by the "Download All Images" feature.
+ * Returns { total, success, failed }.
+ */
+export async function preCacheImages(
+  words: { word: string; definition: string }[],
+  onProgress?: (current: number, total: number, word: string) => void
+): Promise<{ total: number; success: number; failed: number }> {
+  const total = words.length;
+  let success = 0;
+  let failed = 0;
+
+  for (let i = 0; i < total; i++) {
+    const { word, definition } = words[i];
+    onProgress?.(i + 1, total, word);
+
+    // Skip if already cached
+    const existing = await getCachedImage(word);
+    if (existing) {
+      success++;
+      continue;
+    }
+
+    const image = await generateWordImage(word, definition);
+    if (image) {
+      success++;
+    } else {
+      failed++;
+    }
+
+    // Small delay to avoid rate limiting
+    if (i < total - 1) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  return { total, success, failed };
 }
 
 // ─── Pronunciation Assessment ──────────────────────────

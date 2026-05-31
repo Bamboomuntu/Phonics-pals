@@ -220,6 +220,7 @@ const App: React.FC = () => {
           <PreGame
             topic={selectedTopic!}
             wordCount={wordDeck.length}
+            wordDeck={wordDeck}
             onStart={() => navigateTo('GAME_VIEW')}
             onBack={() => navigateTo('TOPIC_SELECTION')}
           />
