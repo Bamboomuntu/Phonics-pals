@@ -1,24 +1,24 @@
 {
   "version": 1,
-  "generatedAt": "2026-05-13T20:46:53.104Z",
+  "generatedAt": "2026-05-31T00:18:09.978Z",
   "totalWords": 139,
   "words": [
     {
       "wordId": "cow_01",
       "word": "Cow",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/cow.mp3"
     },
     {
       "wordId": "goat_02",
       "word": "Goat",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/goat.mp3"
     },
     {
       "wordId": "chicken_03",
       "word": "Chicken",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/chicken.mp3"
     },
     {
@@ -36,7 +36,7 @@
     {
       "wordId": "water_06",
       "word": "Water",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/water.mp3"
     },
     {
@@ -72,7 +72,7 @@
     {
       "wordId": "milk_12",
       "word": "Milk",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/milk.mp3"
     },
     {
@@ -786,19 +786,19 @@
     {
       "wordId": "hand_131",
       "word": "Hand",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/hand.mp3"
     },
     {
       "wordId": "leg_132",
       "word": "Leg",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/leg.mp3"
     },
     {
       "wordId": "eat_133",
       "word": "Eat",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/eat.mp3"
     },
     {
@@ -810,7 +810,7 @@
     {
       "wordId": "sleep_135",
       "word": "Sleep",
-      "hasAudio": false,
+      "hasAudio": true,
       "audioFile": "audio/sleep.mp3"
     },
     {

@@ -86,7 +86,7 @@ async function generateTTS(word, text, language) {
   
   const payload = {
     contents: [{ parts: [{ text: `Say the word clearly: "${text}"` }] }],
-    config: {
+    generationConfig: {
       responseModalities: ['AUDIO'],
       speechConfig: {
         voiceConfig: {

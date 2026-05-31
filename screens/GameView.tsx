@@ -2,9 +2,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WordEntry, Topic } from '../types';
 import { GameButton } from '../components/GameButton';
-import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { motion, AnimatePresence } from 'framer-motion';
-import { playStarSound, playPop, decodeBase64, decodeAudioData } from '../utils/audio';
+import { playStarSound, playPop } from '../utils/audio';
+import {
+  speakWord,
+  generateWordImage,
+  assessPronunciation as engineAssess,
+  stopAllSpeech as engineStopAll,
+  getEffectiveOnline,
+} from '../src/lib/offline-game-engine';
 
 interface GameViewProps {
   deck: WordEntry[];
@@ -19,42 +25,6 @@ interface AssessmentResult {
   coachingTip: string;
 }
 
-const VOICES = {
-  TEACHER: 'Kore', 
-  COACH: 'Kore',  
-};
-
-/**
- * Prompt Constructor Function
- * Constructs a highly specific prompt to ensure kid-friendly, consistent visuals.
- */
-const generateImagePrompt = (word: string, definition: string): string => {
-  const fixedStyleBlock = "A cheerful, friendly cartoon illustration in a children's picture book style. Thick outlines, bright primary colors, and simple shapes. The background must be uncluttered and simple so the subject is clear. No realistic photos.";
-  
-  const wordLower = word.toLowerCase();
-  let dynamicContext = "";
-
-  // Specific logic for trickier or abstract words as requested
-  if (wordLower === 'archaeologist') {
-    dynamicContext = "A cute cartoon archaeologist wearing a big hat, smiling while happily digging up a shiny dinosaur bone in the sand with a small shovel.";
-  } else if (wordLower === 'photosynthesis') {
-    dynamicContext = "A happy cartoon flower with a smiling face, soaking up bright yellow sun rays, with little green energy sparkles around its leaves.";
-  } else if (wordLower === 'gravity') {
-    dynamicContext = "A funny cartoon apple falling from a tree and bouncing off a cute teddy bear's head.";
-  } else if (wordLower === 'skeleton') {
-    dynamicContext = "A friendly, dancing cartoon skeleton with a big smile, making a funny pose.";
-  } else if (wordLower === 'galaxy') {
-    dynamicContext = "A swirling, colorful purple and blue galaxy with happy little stars twinkling and smiling.";
-  } else if (wordLower === 'nutrition' || wordLower === 'protein' || wordLower === 'vitamin') {
-    dynamicContext = "Strong cartoon vegetables with tiny hero capes and big smiles, looking very healthy and powerful.";
-  } else {
-    // Default dynamic context for other words
-    dynamicContext = `A cute and happy cartoon version of ${wordLower}. ${definition}`;
-  }
-
-  return `${dynamicContext} Style: ${fixedStyleBlock}`;
-};
-
 export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
@@ -68,17 +38,15 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
   const [micError, setMicError] = useState(false);
   const [showDefinition, setShowDefinition] = useState(false);
   const [isStartingMic, setIsStartingMic] = useState(false);
-  
+
   // Image Generation States
   const [wordImage, setWordImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
-  const outputAudioCtxRef = useRef<AudioContext | null>(null);
-  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  
+
   const currentWord = deck[currentIndex];
 
   const calculateStars = (score: number) => {
@@ -89,23 +57,23 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
   };
 
   const stopAllSpeech = () => {
-    if (currentSourceRef.current) {
-      try {
-        currentSourceRef.current.stop();
-        currentSourceRef.current.onended = null;
-      } catch(e) {}
-      currentSourceRef.current = null;
-    }
+    engineStopAll();
+    setIsSpeaking(false);
+  };
+
+  const playWordAudio = async (text: string) => {
+    stopAllSpeech();
+    setIsSpeaking(true);
+    await speakWord(text);
     setIsSpeaking(false);
   };
 
   /**
-   * Fetch image with Local Storage Caching
+   * Fetch image — online = Gemini gen, offline = null (shows placeholder)
    */
   const fetchWordImage = async (word: string, definition: string) => {
     const cacheKey = `phonic_pal_img_${word.toLowerCase().replace(/\s/g, '_')}`;
     const cached = localStorage.getItem(cacheKey);
-    
     if (cached) {
       setWordImage(cached);
       return;
@@ -114,89 +82,21 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
     setIsGeneratingImage(true);
     setWordImage(null);
 
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = generateImagePrompt(word, definition);
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [{ text: prompt }]
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: "1:1"
-          }
-        }
-      });
+    const image = await generateWordImage(word, definition);
 
-      let foundImage = null;
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          foundImage = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-          break;
-        }
+    if (image) {
+      setWordImage(image);
+      // Cache in localStorage
+      try {
+        localStorage.setItem(cacheKey, image);
+      } catch {
+        Object.keys(localStorage)
+          .filter(k => k.startsWith('phonic_pal_img_'))
+          .forEach(k => localStorage.removeItem(k));
+        try { localStorage.setItem(cacheKey, image); } catch {}
       }
-
-      if (foundImage) {
-        setWordImage(foundImage);
-        try {
-          localStorage.setItem(cacheKey, foundImage);
-        } catch (e) {
-          // Clear old cache if quota exceeded
-          Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('phonic_pal_img_')) localStorage.removeItem(key);
-          });
-          try { localStorage.setItem(cacheKey, foundImage); } catch(err) {}
-        }
-      }
-    } catch (error) {
-      console.error("Image Gen Error:", error);
-    } finally {
-      setIsGeneratingImage(false);
     }
-  };
-
-  const speakWithAI = async (text: string, instruction: string = "Speak clearly", voice: string = VOICES.TEACHER) => {
-    stopAllSpeech();
-    setIsSpeaking(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const nuancedPrompt = `Instruction: Use a very friendly, excited, and cheerful female tone. Speak with high energy like an encouraging coach. Pitch: 1.2, Rate: 0.9. ${instruction}: "${text}"`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: nuancedPrompt }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voice },
-            },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        if (!outputAudioCtxRef.current) {
-          outputAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        }
-        const ctx = outputAudioCtxRef.current;
-        const audioBuffer = await decodeAudioData(decodeBase64(base64Audio), ctx, 24000, 1);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        source.onended = () => setIsSpeaking(false);
-        currentSourceRef.current = source;
-        source.start();
-      } else {
-        setIsSpeaking(false);
-      }
-    } catch (e) {
-      console.error("Gemini TTS Error:", e);
-      setIsSpeaking(false);
-    }
+    setIsGeneratingImage(false);
   };
 
   useEffect(() => {
@@ -204,12 +104,11 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
       setResult(null);
       setShowDefinition(false);
       stopAllSpeech();
-      
-      // Load context image
+
       fetchWordImage(currentWord.word, currentWord.definition);
 
       const timer = setTimeout(() => {
-        speakWithAI(currentWord.word, "Say this word clearly with an excited, warm female coach's voice");
+        playWordAudio(currentWord.word);
       }, 400);
       return () => clearTimeout(timer);
     }
@@ -221,8 +120,11 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
       for (let i = 0; i < Math.ceil(starsCount); i++) {
         setTimeout(() => playStarSound(i), i * 120 + 200);
       }
-      const spokenFeedback = `${result.feedback}. ${result.coachingTip}`;
-      setTimeout(() => speakWithAI(spokenFeedback, "Give this feedback with a super excited and encouraging female coach's voice", VOICES.COACH), 800);
+      // Skip coaching feedback speech when offline
+      if (getEffectiveOnline()) {
+        const spokenFeedback = `${result.feedback}. ${result.coachingTip}`;
+        setTimeout(() => playWordAudio(spokenFeedback), 800);
+      }
     }
   }, [result]);
 
@@ -278,38 +180,11 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
   const analyzePronunciation = async (blob: Blob) => {
     setIsAnalyzing(true);
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const base64Audio = (reader.result as string).split(',')[1];
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: {
-            parts: [
-              { text: `Evaluate the child's pronunciation of: "${currentWord.word}". Be encouraging but precise. Return JSON: { pronunciationScore (0-100), fluencyScore (0-100), feedback (2-3 word enthusiastic phrase), coachingTip (One short, natural tip) }` },
-              { inlineData: { mimeType: 'audio/webm', data: base64Audio } }
-            ]
-          },
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                pronunciationScore: { type: Type.NUMBER },
-                fluencyScore: { type: Type.NUMBER },
-                feedback: { type: Type.STRING },
-                coachingTip: { type: Type.STRING }
-              },
-              required: ['pronunciationScore', 'fluencyScore', 'feedback', 'coachingTip']
-            }
-          }
-        });
-        const data = JSON.parse(response.text || '{}') as AssessmentResult;
-        setResult(data);
-        setIsAnalyzing(false);
-      };
+      const result = await engineAssess(currentWord.word, blob);
+      setResult(result);
     } catch (err) {
+      console.error('Assessment error:', err);
+    } finally {
       setIsAnalyzing(false);
     }
   };
@@ -431,7 +306,7 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
                 {currentWord.word}
                 </motion.h3>
                 
-                {/* Control Icons Row - Organized to prevent overlap */}
+                {/* Control Icons Row */}
                 <div className="flex gap-3 md:gap-6 items-center bg-white/40 backdrop-blur-sm p-2 md:p-3 rounded-full shadow-inner border border-white/50 mt-1">
                   <button 
                       title="Show Meaning"
@@ -442,7 +317,7 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
                   </button>
                   <button 
                       title="Listen"
-                      onClick={() => speakWithAI(currentWord.word, "Say this word clearly like a cheerful female coach")} 
+                      onClick={() => playWordAudio(currentWord.word)} 
                       disabled={isSpeaking || isRecording} 
                       className={`bg-white w-14 h-14 md:w-20 md:h-20 rounded-full shadow-xl border-b-4 border-gray-100 flex items-center justify-center hover:scale-110 active:scale-95 transition-all ${isSpeaking ? 'animate-pulse ring-4 ring-pink-300' : ''}`}
                   >
@@ -450,7 +325,7 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
                   </button>
                   <button 
                       title="Slow Mode"
-                      onClick={() => speakWithAI(currentWord.word, "Say this word very slowly and clearly", VOICES.TEACHER)} 
+                      onClick={() => playWordAudio(currentWord.word)} 
                       disabled={isSpeaking || isRecording} 
                       className={`bg-white w-10 h-10 md:w-14 md:h-14 rounded-full shadow-md border-b-4 border-gray-100 flex items-center justify-center hover:scale-110 active:scale-95 transition-all ${isSpeaking ? 'opacity-50' : ''}`}
                   >
@@ -550,6 +425,13 @@ export const GameView: React.FC<GameViewProps> = ({ deck, topic, onFinish }) => 
           {currentIndex === deck.length - 1 ? 'Finish Session' : 'Skip Word'}
         </button>
       </div>
+      
+      {/* Offline indicator */}
+      {!getEffectiveOnline() && (
+        <div className="fixed bottom-4 right-4 bg-amber-500 text-white px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-lg z-50">
+          Offline
+        </div>
+      )}
     </div>
   );
 };
